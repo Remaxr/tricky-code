@@ -1,9 +1,5 @@
 package;
 
-import openfl.Lib;
-#if FEATURE_LUAMODCHART
-import llua.Lua;
-#end
 import Controls.Control;
 import flixel.FlxG;
 import flixel.FlxSprite;
@@ -21,76 +17,40 @@ class PauseSubState extends MusicBeatSubstate
 {
 	var grpMenuShit:FlxTypedGroup<Alphabet>;
 
-	public static var goToOptions:Bool = false;
-	public static var goBack:Bool = false;
-
-	var menuItems:Array<String> = ['Resume', 'Restart Song', 'Options', "Waveform Test", 'Exit to menu'];
+	var menuItems:Array<String> = ['Resume', 'Restart Song', 'Exit to menu'];
 	var curSelected:Int = 0;
-
-	public static var playingPause:Bool = false;
 
 	var pauseMusic:FlxSound;
 
-	var perSongOffset:FlxText;
-
-	var offsetChanged:Bool = false;
-	var startOffset:Float = PlayState.songOffset;
-
-	var bg:FlxSprite;
-
-	public function new()
+	public function new(x:Float, y:Float)
 	{
 		super();
 
-		if (PlayState.instance.useVideo)
-		{
-			menuItems.remove("Resume");
-			if (GlobalVideo.get().playing)
-				GlobalVideo.get().pause();
-		}
+		//#if debug
+		if (PlayState.SONG.song.toLowerCase() == 'improbable-outset' #if debug || true  #end)
+			menuItems.push("Skip Song");
+		//#end
 
-		if (FlxG.sound.music.playing)
-			FlxG.sound.music.pause();
+		pauseMusic = new FlxSound().loadEmbedded(Paths.music('breakfast'), true, true);
+		pauseMusic.volume = 0;
+		pauseMusic.play(false, FlxG.random.int(0, Std.int(pauseMusic.length / 2)));
 
-		for (i in FlxG.sound.list)
-		{
-			if (i.playing && i.ID != 9000)
-				i.pause();
-		}
+		FlxG.sound.list.add(pauseMusic);
 
-		if (!playingPause)
-		{
-			playingPause = true;
-			pauseMusic = new FlxSound().loadEmbedded(Paths.music('breakfast'), true, true);
-			pauseMusic.volume = 0;
-			pauseMusic.play(false, FlxG.random.int(0, Std.int(pauseMusic.length / 2)));
-			pauseMusic.ID = 9000;
-
-			FlxG.sound.list.add(pauseMusic);
-		}
-		else
-		{
-			for (i in FlxG.sound.list)
-			{
-				if (i.ID == 9000) // jankiest static variable
-					pauseMusic = i;
-			}
-		}
-
-		bg = new FlxSprite().makeGraphic(FlxG.width, FlxG.height, FlxColor.BLACK);
+		var bg:FlxSprite = new FlxSprite().makeGraphic(FlxG.width, FlxG.height, FlxColor.BLACK);
 		bg.alpha = 0;
 		bg.scrollFactor.set();
 		add(bg);
 
 		var levelInfo:FlxText = new FlxText(20, 15, 0, "", 32);
-		levelInfo.text += PlayState.SONG.songName;
+		levelInfo.text += PlayState.SONG.song;
 		levelInfo.scrollFactor.set();
 		levelInfo.setFormat(Paths.font("vcr.ttf"), 32);
 		levelInfo.updateHitbox();
 		add(levelInfo);
 
 		var levelDifficulty:FlxText = new FlxText(20, 15 + 32, 0, "", 32);
-		levelDifficulty.text += CoolUtil.difficultyFromInt(PlayState.storyDifficulty).toUpperCase();
+		levelDifficulty.text += CoolUtil.difficultyString();
 		levelDifficulty.scrollFactor.set();
 		levelDifficulty.setFormat(Paths.font('vcr.ttf'), 32);
 		levelDifficulty.updateHitbox();
@@ -102,19 +62,12 @@ class PauseSubState extends MusicBeatSubstate
 		levelInfo.x = FlxG.width - (levelInfo.width + 20);
 		levelDifficulty.x = FlxG.width - (levelDifficulty.width + 20);
 
-		FlxTween.tween(bg, {alpha: 0.6}, 0.4, {ease: FlxEase.quartInOut});
+		bg.alpha = 0.5;
 		FlxTween.tween(levelInfo, {alpha: 1, y: 20}, 0.4, {ease: FlxEase.quartInOut, startDelay: 0.3});
 		FlxTween.tween(levelDifficulty, {alpha: 1, y: levelDifficulty.y + 5}, 0.4, {ease: FlxEase.quartInOut, startDelay: 0.5});
 
 		grpMenuShit = new FlxTypedGroup<Alphabet>();
 		add(grpMenuShit);
-		perSongOffset = new FlxText(5, FlxG.height - 18, 0, "Hello chat", 12);
-		perSongOffset.scrollFactor.set();
-		perSongOffset.setFormat("VCR OSD Mono", 16, FlxColor.WHITE, LEFT, FlxTextBorderStyle.OUTLINE, FlxColor.BLACK);
-
-		#if FEATURE_FILESYSTEM
-		add(perSongOffset);
-		#end
 
 		for (i in 0...menuItems.length)
 		{
@@ -126,10 +79,14 @@ class PauseSubState extends MusicBeatSubstate
 
 		changeSelection();
 
+		FlxTween.globalManager.active = false;
+
 		cameras = [FlxG.cameras.list[FlxG.cameras.list.length - 1]];
 
-                addVirtualPad(UP_DOWN, A);
-                addPadCamera();
+		#if mobileC
+		addVirtualPad(UP_DOWN, A);
+		_virtualpad.cameras = cameras;
+		#end
 	}
 
 	override function update(elapsed:Float)
@@ -139,117 +96,38 @@ class PauseSubState extends MusicBeatSubstate
 
 		super.update(elapsed);
 
-		if (PlayState.instance.useVideo)
-			menuItems.remove('Resume');
+		var upP = controls.UP_P;
+		var downP = controls.DOWN_P;
+		var accepted = controls.ACCEPT;
 
-		for (i in FlxG.sound.list)
-		{
-			if (i.playing && i.ID != 9000)
-				i.pause();
-		}
-
-		if (bg.alpha > 0.6)
-			bg.alpha = 0.6;
-
-		var oldOffset:Float = 0;
-
-		var songPath = SUtil.getPath() + 'assets/data/songs/${PlayState.SONG.songId}/';
-
-		#if FEATURE_STEPMANIA
-		if (PlayState.isSM && !PlayState.isStoryMode)
-			songPath = PlayState.pathToSm;
-		#end
-
-		if (controls.UP_P)
+		if (upP)
 		{
 			changeSelection(-1);
 		}
-		else if (controls.DOWN_P)
+		if (downP)
 		{
 			changeSelection(1);
 		}
 
-		if (controls.ACCEPT && !FlxG.keys.pressed.ALT)
+		if (accepted)
 		{
 			var daSelected:String = menuItems[curSelected];
+
+			FlxTween.globalManager.active = true;
 
 			switch (daSelected)
 			{
 				case "Resume":
 					close();
 				case "Restart Song":
-					PlayState.startTime = 0;
-					if (PlayState.instance.useVideo)
-					{
-						GlobalVideo.get().stop();
-						PlayState.instance.remove(PlayState.instance.videoSprite);
-						PlayState.instance.removedVideo = true;
-					}
-					PlayState.instance.clean();
 					FlxG.resetState();
-					PlayState.stageTesting = false;
-				case "Options":
-					goToOptions = true;
-					close();
-                                case "Waveform Test":
-                                        PlayState.songMultiplier = 1;
-			                if (PlayState.instance.useVideo)
-			                {
-				                GlobalVideo.get().stop();
-				                PlayState.instance.remove(PlayState.instance.videoSprite);
-				                PlayState.instance.removedVideo = true;
-			                }
-
-			                FlxG.switchState(new WaveformTestState());
-			                PlayState.stageTesting = false;
-			                #if FEATURE_LUAMODCHART
-			                if (PlayState.luaModchart != null)
-			                {
-				                PlayState.luaModchart.die();
-				                PlayState.luaModchart = null;
-			                }
-			                #end
 				case "Exit to menu":
-					PlayState.startTime = 0;
-					if (PlayState.instance.useVideo)
-					{
-						GlobalVideo.get().stop();
-						PlayState.instance.remove(PlayState.instance.videoSprite);
-						PlayState.instance.removedVideo = true;
-					}
-					if (PlayState.loadRep)
-					{
-						FlxG.save.data.botplay = false;
-						FlxG.save.data.scrollSpeed = 1;
-						FlxG.save.data.downscroll = false;
-					}
 					PlayState.loadRep = false;
-					PlayState.stageTesting = false;
-					#if FEATURE_LUAMODCHART
-					if (PlayState.luaModchart != null)
-					{
-						PlayState.luaModchart.die();
-						PlayState.luaModchart = null;
-					}
-					#end
-					if (FlxG.save.data.fpsCap > 340)
-						(cast(Lib.current.getChildAt(0), Main)).setFPSCap(120);
-
-					PlayState.instance.clean();
-
-					if (PlayState.isStoryMode)
-					{
-						GameplayCustomizeState.freeplayBf = 'bf';
-						GameplayCustomizeState.freeplayDad = 'dad';
-						GameplayCustomizeState.freeplayGf = 'gf';
-						GameplayCustomizeState.freeplayNoteStyle = 'normal';
-						GameplayCustomizeState.freeplayStage = 'stage';
-						GameplayCustomizeState.freeplaySong = 'bopeebo';
-						GameplayCustomizeState.freeplayWeek = 1;
-						FlxG.switchState(new StoryMenuState());
-					}
-					else
-						FlxG.switchState(new FreeplayState());
+					MainMenuState.reRoll = true;
+					FlxG.switchState(new MainMenuState());
+				case "Skip Song":
+					close();
+					PlayState.instance.endSong();
 			}
 		}
 
@@ -262,12 +140,7 @@ class PauseSubState extends MusicBeatSubstate
 
 	override function destroy()
 	{
-		if (!goToOptions)
-		{
-			Debug.logTrace("destroying music for pauseeta");
-			pauseMusic.destroy();
-			playingPause = false;
-		}
+		pauseMusic.destroy();
 
 		super.destroy();
 	}
@@ -275,8 +148,6 @@ class PauseSubState extends MusicBeatSubstate
 	function changeSelection(change:Int = 0):Void
 	{
 		curSelected += change;
-
-		FlxG.sound.play(Paths.sound('scrollMenu'), 0.4);
 
 		if (curSelected < 0)
 			curSelected = menuItems.length - 1;

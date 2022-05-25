@@ -6,6 +6,7 @@ import flixel.FlxSubState;
 import flixel.math.FlxPoint;
 import flixel.util.FlxColor;
 import flixel.util.FlxTimer;
+import flixel.FlxCamera;
 
 class GameOverSubstate extends MusicBeatSubstate
 {
@@ -16,16 +17,8 @@ class GameOverSubstate extends MusicBeatSubstate
 
 	public function new(x:Float, y:Float)
 	{
-		var daStage = PlayState.Stage.curStage;
-		var daBf:String = '';
-		switch (PlayState.boyfriend.curCharacter)
-		{
-			case 'bf-pixel':
-				stageSuffix = '-pixel';
-				daBf = 'bf-pixel-dead';
-			default:
-				daBf = 'bf';
-		}
+		var daStage = PlayState.curStage;
+		var daBf:String = 'signDeath';
 
 		super();
 
@@ -37,21 +30,30 @@ class GameOverSubstate extends MusicBeatSubstate
 		camFollow = new FlxObject(bf.getGraphicMidpoint().x, bf.getGraphicMidpoint().y, 1, 1);
 		add(camFollow);
 
-		FlxG.sound.play(Paths.sound('fnf_loss_sfx' + stageSuffix));
-		Conductor.changeBPM(100);
+		FlxG.sound.play(Paths.sound('BF_Deathsound','clown'));
+		FlxG.sound.play(Paths.sound('Micdrop','clown'));
+		Conductor.changeBPM(200);
 
 		// FlxG.camera.followLerp = 1;
 		// FlxG.camera.focusOn(FlxPoint.get(FlxG.width / 2, FlxG.height / 2));
 		FlxG.camera.scroll.set();
 		FlxG.camera.target = null;
 
+		FlxG.camera.follow(camFollow, LOCKON, 0.01);
+		
 		bf.playAnim('firstDeath');
+		bf.animation.resume();
 
-                addVirtualPad(NONE, A_B);
-                addPadCamera();
+		#if mobileC
+		addVirtualPad(NONE, A_B);
+		var camcontrol = new FlxCamera();
+		FlxG.cameras.add(camcontrol);
+		camcontrol.bgColor.alpha = 0;
+		_virtualpad.cameras = [camcontrol];
+		#end
 	}
 
-	var startVibin:Bool = false;
+	var playedMic:Bool = false;
 
 	override function update(elapsed:Float)
 	{
@@ -62,41 +64,23 @@ class GameOverSubstate extends MusicBeatSubstate
 			endBullshit();
 		}
 
-		if (FlxG.save.data.InstantRespawn)
-		{
-			LoadingState.loadAndSwitchState(new PlayState());
-		}
-
 		if (controls.BACK)
 		{
 			FlxG.sound.music.stop();
-
-			if (PlayState.isStoryMode)
-			{
-				GameplayCustomizeState.freeplayBf = 'bf';
-				GameplayCustomizeState.freeplayDad = 'dad';
-				GameplayCustomizeState.freeplayGf = 'gf';
-				GameplayCustomizeState.freeplayNoteStyle = 'normal';
-				GameplayCustomizeState.freeplayStage = 'stage';
-				GameplayCustomizeState.freeplaySong = 'bopeebo';
-				GameplayCustomizeState.freeplayWeek = 1;
-				FlxG.switchState(new StoryMenuState());
-			}
-			else
-				FlxG.switchState(new FreeplayState());
+			MainMenuState.reRoll = true;
+			FlxG.switchState(new MainMenuState());
 			PlayState.loadRep = false;
-			PlayState.stageTesting = false;
-		}
-
-		if (bf.animation.curAnim.name == 'firstDeath' && bf.animation.curAnim.curFrame == 12)
-		{
-			FlxG.camera.follow(camFollow, LOCKON, 0.01);
 		}
 
 		if (bf.animation.curAnim.name == 'firstDeath' && bf.animation.curAnim.finished)
 		{
-			FlxG.sound.playMusic(Paths.music('gameOver' + stageSuffix));
-			startVibin = true;
+			FlxG.sound.playMusic(Paths.music('gameOver','clown'));
+			bf.playAnim('deathLoop', true);
+		}
+
+		else if (bf.animation.curAnim.finished && bf.animation.curAnim.name != 'deathConfirm')
+		{
+			bf.playAnim('deathLoop', true);
 		}
 
 		if (FlxG.sound.music.playing)
@@ -109,10 +93,6 @@ class GameOverSubstate extends MusicBeatSubstate
 	{
 		super.beatHit();
 
-		if (startVibin && !isEnding)
-		{
-			bf.playAnim('deathLoop', true);
-		}
 		FlxG.log.add('beat');
 	}
 
@@ -122,17 +102,15 @@ class GameOverSubstate extends MusicBeatSubstate
 	{
 		if (!isEnding)
 		{
-			PlayState.startTime = 0;
 			isEnding = true;
 			bf.playAnim('deathConfirm', true);
 			FlxG.sound.music.stop();
-			FlxG.sound.play(Paths.music('gameOverEnd' + stageSuffix));
+			FlxG.sound.play(Paths.music('gameOverEnd','clown'));
 			new FlxTimer().start(0.7, function(tmr:FlxTimer)
 			{
 				FlxG.camera.fade(FlxColor.BLACK, 2, false, function()
 				{
 					LoadingState.loadAndSwitchState(new PlayState());
-					PlayState.stageTesting = false;
 				});
 			});
 		}
